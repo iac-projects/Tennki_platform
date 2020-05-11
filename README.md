@@ -82,7 +82,7 @@ kubectl rollout undo deployment paymentservice --to-revision=1
    ```
 - Cоздан [Deployment](kubernetes-controllers/frontend-deployment.yaml) манифеста для приложения frontend осуществляющий проверку работоспособности приложения при помощи probes.
 - Создан манифест [DaemonSet](kubernetes-controllers/node-exporter-daemonset.yaml) для запуска Node Exporter. За основу взят https://github.com/coreos/kube-prometheus/blob/master/manifests/node-exporter-daemonset.yaml
-Для возможности запуска на master нодах можно воспользоваться следующими конструкиями:
+Для возможности запуска на master нодах можно воспользоваться следующими конструкциями:
 ```yaml
 tolerations:
    - operator: "Exists"
