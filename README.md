@@ -92,3 +92,21 @@ tolerations:
 - key: node-role.kubernetes.io/master
   effect: NoSchedule
 ````
+
+# HW.3 Kubernetes-security
+- [Task 1](kubernetes-security/task01)
+  - Создан Service Account (SA) bob с кластер ролью admin.
+  - Создан SA dave.
+- [Task 2](kubernetes-security/task02)
+  - Создан Namespace (NS) prometheus.
+  - Создан SA carol в NS prometheus.
+  - Создана Cluster Role с возможностью get, list, watch всех подов в кластере. 
+  - Cоздан Cluster Role Binding для всех SAs в NS prometheus.
+- [Task 3](kubernetes-security/task02)
+  - Создан NS dev.
+  - Создан SA jane в NS dev.
+  - Создана Role admin в NS dev
+  - Предоставлена Role admin для всех jane в NS dev.
+  - Создан SA ken в NS dev.
+  - Создана Role view в NS dev
+  - Предоставлена Role view для SA ken в NS dev.
