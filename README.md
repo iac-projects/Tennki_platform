@@ -36,6 +36,12 @@ Address: 10.96.166.80
 - Развернут Ingress Nginx
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/nginx-0.30.0/deploy/static/mandatory.yaml
+kubectl apply -f kubernetes-networks/nginx-lb.yaml
+```
+- Приложение опубликовано через ingress http://<ingress_lb_ip>/web
+```bash
+kubectl apply -f kubernetes-networks/web-svc-headless.yaml
+kubectl apply -f kubernetes-networks/web-ingress.yaml
 ```
 - Развернут Kubernetes Dashboard
 ```bash
