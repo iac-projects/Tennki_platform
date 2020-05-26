@@ -1,6 +1,24 @@
 # Tennki_platform
 Tennki Platform repository
 
+# HW.5 Kubernetes-volumes
+- Запущен StatefusSet minio
+```bash
+kubectl -f kubernetes-volumes/minio-statefulset.yaml
+```
+- Запущен сервис для доступа к StatefulSet minio
+```bash
+kubectl -f kubernetes-volumes/minio-headless-service.yaml
+```
+- Создан [secret](kubernetes-volumes/minio-secret.yaml) для хранения переменных необходимых для запуска minio
+```bash
+kubectl create secret generic minio-secret --from-literal=MINIO_ACCESS_KEY='minio' --from-literal=MINIO_SECRET_KEY='minio123'
+```
+или
+```bash
+kubectl -f kubernetes-volumes/minio-secret.yaml
+```
+
 # HW.1 Kubernetes-intro
 
 ## В процессе сделано:
@@ -110,3 +128,5 @@ tolerations:
   - Создан SA ken в NS dev.
   - Создана Role view в NS dev
   - Предоставлена Role view для SA ken в NS dev.
+
+
