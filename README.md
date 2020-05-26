@@ -1,6 +1,24 @@
 # Tennki_platform
 Tennki Platform repository
 
+# HW.5 Kubernetes-volumes
+- Запущен StatefusSet minio
+```bash
+kubectl -f kubernetes-volumes/minio-statefulset.yaml
+```
+- Запущен сервис для доступа к StatefulSet minio
+```bash
+kubectl -f kubernetes-volumes/minio-headless-service.yaml
+```
+- Создан [secret](kubernetes-volumes/minio-secret.yaml) для хранения переменных необходимых для запуска minio
+```bash
+kubectl create secret generic minio-secret --from-literal=MINIO_ACCESS_KEY='minio' --from-literal=MINIO_SECRET_KEY='minio123'
+```
+или
+```bash
+kubectl -f kubernetes-volumes/minio-secret.yaml
+```
+
 # HW.4 Kubernetes-networks
 
 ## В процессе сделано:
@@ -74,7 +92,6 @@ export HOSTNAME='web-74c8c7ff89-6vnf7'
 ~: curl -s -H "canary: always" --resolve web.local:80:172.17.255.2 web.local/web | grep HOSTNAME
 export HOSTNAME='canary-7557bfbbdb-x8d6l'
 ```
-
 
 # HW.3 Kubernetes-security
 
