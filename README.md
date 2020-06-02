@@ -1,7 +1,94 @@
 # Tennki_platform
 Tennki Platform repository
 
+# HW.6 Kubernetes-templating
+## В процессе сделано:
+- Установлен helm chart nginx-ingress
+```bash
+kubectl create ns nginx-ingress
+helm upgrade --install nginx-ingress stable/nginx-ingress --wait --namespace=nginx-ingress --version=1.38.0
+```
+- Установлен helm chart cert-manager
+```bash
+kubectl create ns nginx-ingress
+helm repo add jetstack https://charts.jetstack.io
+kubectl apply -f https://raw.githubusercontent.com/jetstack/cert-manager/release-0.9/deploy/manifests/00-crds.yaml
+kubectl label namespace cert-manager certmanager.k8s.io/disable-validation="true"
+helm upgrade --install cert-manager jetstack/cert-manager --wait --namespace=cert-manager --version=0.9.0
+kubectl apply -f kubernetes-templating/cert-manager/clusterissuer.yaml
+```
+- Установлен helm chart chartmuseum
+```bash
+kubectl create ns chartmuseum
+helm upgrade --install chartmuseum stable/chartmuseum --wait --namespace=chartmuseum --version=2.13.0 -f kubernetes-templating/chartmuseum/values.yaml
+```
+- |* Процесс работы с chartmuseum
+```bash
+# Добавление репозитория
+helm repo add chartmuseum https://chartmuseum.tennki.tk
+# Загрузка chart в репозиторий
+curl -L --data-binary "@frontend-0.1.0.tgz" http://chartmuseum.tennki.tk/api/charts{"saved":true}
+# Обновление списка чартов
+helm repo update                           
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "chartmuseum" chart repository
+...Successfully got an update from the "harbor" chart repository
+...Successfully got an update from the "jetstack" chart repository
+...Successfully got an update from the "stable" chart repository
+Update Complete. ⎈ Happy Helming!⎈ 
+# Поиск чарта frontend
+helm search repo frontend
+NAME                    CHART VERSION   APP VERSION     DESCRIPTION                                       
+chartmuseum/frontend    0.1.0           1.16.0          A Helm chart for Kubernetes
+# Установка чарта
+helm upgrade --install frontend chartmuseum/frontend --wait --namespace=hipster-shop
+```
+- Установлен helm chart harbor
+```bash
+helm repo add harbor https://helm.goharbor.io
+kubectl create ns harbor
+helm upgrade --install harbor harbor/harbor --wait --namespace=harbor --version=1.1.2 -f kubernetes-templating/harbor/values.yaml
+```
+- |* Подготовлен [helmfile](kubernetes-templating/helmfile/helmfile.yaml) для запуска nginx-ingress,cert-manager и harbor. В файле используются файл [harbor.yaml](kubernetes-templating/helmfile/values/harbor.yaml) для переопределения некоторых параметров чарта harbor и файл манифеста [clusterissuer.yaml](kubernetes-templating/helmfile/charts/cert-manager/clusterissuer.yaml) для создания Prod ClusterIssuer. 
+```bash
+helmfile -f kubernetes-templating/helmfile/helmfile.yaml sync
+```
+- Создан helm chart [hipster-shop](kubernetes-templating/hipster-shop)
+```bash
+kubectl create ns hipster-shop
+helm upgrade --install hipster-shop kubernetes-templating/hipster-shop --namespace hipster-shop
+```
+- Отделен сервис frontend и на его основе создан helm chart [frontend](kubernetes-templating/frontend)
+```bash
+helm upgrade --install frontend kubernetes-templating/frontend --namespace hipster-shop
+```
+- Чарт frontend добавлен как зависимость в чарт hipster-shop [Chart.yaml](kubernetes-templating/hipster-shop/Chart.yaml)
+```yaml
+dependencies:
+  - name: frontend
+    version: 0.1.0
+    repository: "file://../frontend"
+```
+- |* Удален сервис redis, вместо него использован community chart stable/redis [Chart.yaml](kubernetes-templating/hipster-shop/Chart.yaml)
+```yaml
+dependencies:
+  - name: redis
+    version: 10.5.7
+    repository: "https://kubernetes-charts.storage.googleapis.com"
+```
+- От hipster-shop отделены сервисы paymentservice, shippingservice и описаны с помощью jsonnet.
+```bash
+kubecfg show kubernetes-templating/kubecfg/services.jsonnet
+kubecfg update kubernetes-templating/kubecfg/services.jsonnet --namespace hipster-shop
+```
+- От hipster-shop отделен сервис recommendationservice и использован в качестве шаблона для kustomize. 
+```bash
+kubectl apply -k kubernetes-templating/kustomize/overrides/dev
+kubectl apply -k kubernetes-templating/kustomize/overrides/prod
+```
+
 # HW.5 Kubernetes-volumes
+## В процессе сделано:
 - Запущен StatefusSet minio
 ```bash
 kubectl -f kubernetes-volumes/minio-statefulset.yaml
@@ -20,7 +107,6 @@ kubectl -f kubernetes-volumes/minio-secret.yaml
 ```
 
 # HW.4 Kubernetes-networks
-
 ## В процессе сделано:
 - В [под web](kubernetes-intro/web-pod.yaml) добавлены проверки работоспособности.
 - Создан [Deployment](kubernetes-networks/web-deploy.yaml) для запуска web приложения.
@@ -94,7 +180,6 @@ export HOSTNAME='canary-7557bfbbdb-x8d6l'
 ```
 
 # HW.3 Kubernetes-security
-
 ## В процессе сделано:
 - [Task 1](kubernetes-security/task01)
   - Создан Service Account (SA) bob с кластер ролью admin.
@@ -114,7 +199,6 @@ export HOSTNAME='canary-7557bfbbdb-x8d6l'
   - Предоставлена Role view для SA ken в NS dev.
 
 # HW.2 Kubernetes-controllers
-
 ## В процессе сделано:
 - Запущен k8s кластер на основе kind.
 - Создан манифест [Replicaset](kubernetes-controllers/frontend-replicaset.yaml) для запуска 1й реплики приложения frontend. Для успешного запуска в манифесте не хватало секции selector.
@@ -159,10 +243,9 @@ tolerations:
 tolerations:
 - key: node-role.kubernetes.io/master
   effect: NoSchedule
-````
+```
 
 # HW.1 Kubernetes-intro
-
 ## В процессе сделано:
  - Запущен k8s кластер на основе minikube и kind.
  - Проверена способность кластера к самовосстановлению после удаления docker контейнеров и после удаления системных pod-ов. Контроль системных pod-ов осуществляет kubelet, контроль pod-ов развернутых через deployment осуществляет ReplicationController.
@@ -183,7 +266,7 @@ tolerations:
    Сгенерирован манифест для запуска пода из образа.
     ```bash
     kubectl run frontend --image avtandilko/hipster-frontend:v0.0.1 --restart=Never --dry-run -o yaml > frontend-pod.yaml
-    ````
+    ```
    В ходе анализа логов пода выяснилось что для успешного запуска необходимо указать ряд переменных: 
     ```yaml
     - name: PRODUCT_CATALOG_SERVICE_ADDR
