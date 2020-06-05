@@ -1,6 +1,50 @@
 # Tennki_platform
 Tennki Platform repository
 
+# HW.7 Kubernetes-operators
+## В процессе сделано:
+- Подготовлена программа реализующая работу оператора [mysql-operator.py](kubernetes-operators/build/mysql-operator.py).
+- Подготовлен образ для запуска mysql оператора. [Dockerfile](kubernetes-operators/build/Dockerfile)
+```bash
+docker build -t tenki/mysql-operator:v0.1 .
+docker push tenki/mysql-operator:v0.1
+``` 
+- Создан [CustomResourceDefinition](kubernetes-operators/deploy/crd.yml) определящий формат кастомного ресурса mysql и правила валидации.
+Секция required требует наличия поля в описании объекта СustomResource.  
+```yaml
+          required:
+          - image
+          - database
+          - password
+          - storage_size
+```
+- Создан [Deployment](kubernetes-operators/deploy/deploy-operator.yml) для запуска оператора.
+```bash
+kubectl apply -f kubernetes-operators/deploy/service-account.yml
+kubectl apply -f kubernetes-operators/deploy/role.yml
+kubectl apply -f kubernetes-operators/deploy/clusterrolebinding.yml
+kubectl apply -f kubernetes-operators/deploy/deploy-operator.yml
+```
+- Выполнена проверка коректности работы оператора:
+```bash
+# Создаем CustomResource
+kubectl apply -f kubernetes-operators/deploy/cr.yml
+
+# Создаем БД, добавляем данные
+export MYSQLPOD=$(kubectl get pods -l app=mysql-instance -o jsonpath="{.items[*].metadata.name}")
+kubectl exec -it $MYSQLPOD -- mysql -u root -potuspassword -e "CREATE TABLE test (id smallint unsigned not null auto_increment, name varchar(20) not null, constraint pk_example primary key (id));" otus-database
+kubectl exec -it $MYSQLPOD -- mysql -potuspassword -e "INSERT INTO test ( id, name) VALUES ( null, 'some data' );" otus-database
+kubectl exec -it $MYSQLPOD -- mysql -potuspassword -e "INSERT INTO test ( id, name) VALUES ( null, 'some data-2' );" otus-database
+
+# Удаляем CustomResource
+kubectl delete mysqls.otus.homework mysql-instance
+
+# Пересоздаем CustomResource
+kubectl apply -f kubernetes-operators/deploy/cr.yml
+```
+Данные после восстановления.  
+![result](doc/images/mysql-operator.png)
+
 # HW.6 Kubernetes-templating
 ## В процессе сделано:
 - Установлен helm chart nginx-ingress
