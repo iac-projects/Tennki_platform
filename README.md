@@ -9,7 +9,7 @@ Tennki Platform repository
 docker build -t tenki/mysql-operator:v0.1 .
 docker push tenki/mysql-operator:v0.1
 ``` 
-- Создан [CustomResourceDefinition](kubernetes-operators/deploy/crd.yml) определящий формат кастомного ресурса mysql и правила валидации.
+- Создан [CustomResourceDefinition](kubernetes-operators/deploy/crd.yml) определяющий формат кастомного ресурса mysql и правила валидации.
 Секция required требует наличия поля в описании объекта СustomResource.  
 ```yaml
           required:
@@ -20,12 +20,13 @@ docker push tenki/mysql-operator:v0.1
 ```
 - Создан [Deployment](kubernetes-operators/deploy/deploy-operator.yml) для запуска оператора.
 ```bash
+kubectl apply -f kubernetes-operators/deploy/crd.yml
 kubectl apply -f kubernetes-operators/deploy/service-account.yml
 kubectl apply -f kubernetes-operators/deploy/role.yml
 kubectl apply -f kubernetes-operators/deploy/clusterrolebinding.yml
 kubectl apply -f kubernetes-operators/deploy/deploy-operator.yml
 ```
-- Выполнена проверка коректности работы оператора:
+- Выполнена проверка корректности работы оператора:
 ```bash
 # Создаем CustomResource
 kubectl apply -f kubernetes-operators/deploy/cr.yml
@@ -41,6 +42,10 @@ kubectl delete mysqls.otus.homework mysql-instance
 
 # Пересоздаем CustomResource
 kubectl apply -f kubernetes-operators/deploy/cr.yml
+
+# Запрос данных из БД после восстановления
+export MYSQLPOD=$(kubectl get pods -l app=mysql-instance -o jsonpath="{.items[*].metadata.name}")
+kubectl exec -it $MYSQLPOD -- mysql -potuspassword -e "select * from test;" otus-database
 ```
 Данные после восстановления.  
 ![result](doc/images/mysql-operator.png)
