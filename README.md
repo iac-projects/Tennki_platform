@@ -1,6 +1,34 @@
 # Tennki_platform
 Tennki Platform repository
 
+# HW.8 Kubernetes-monitoring
+## В процессе сделано:
+- Подготовлен кастомный образ [nginx](kubernetes-monitoring/nginx) с модулем ngx_http_stub_status_module [nginx_conf](kubernetes-monitoring/nginx/conf). 
+```bash
+docker build -t tenki/nginx:1.0 .
+docker push tenki/nginx:1.0
+``` 
+- Подготовлен [Deployment](kubernetes-monitoring/deployment.yaml) для запуска 3-х реплик приложения и [Service](kubernetes-monitoring/service.yaml). В поде 2 контейнера: "web" - nginx, "exporter" - nginx-exporter. Exporter запускается из образа [nginx/nginx-prometheus-exporter:0.7.0](https://hub.docker.com/r/nginx/nginx-prometheus-exporter/tags)
+```bash
+kubectl apply -f kubernetes-monitoring/deployment.yaml
+kubectl apply -f kubernetes-monitoring/service.yaml
+```
+- Prometheus-operator запускался вместе с Prometheus и Grafana из проекта [coreos/kube-prometheus](https://github.com/coreos/kube-prometheus). В манифестах уменьшено количество реплик Prometheus и Grafana [manfests](kubernetes-monitoring/kube-prometheus/manifests).
+```bash
+minikube delete && minikube start --kubernetes-version=v1.18.1 --memory=4g --bootstrapper=kubeadm --extra-config=kubelet.authentication-token-webhook=true --extra-config=kubelet.authorization-mode=Webhook --extra-config=scheduler.address=0.0.0.0 --extra-config=controller-manager.address=0.0.0.0
+minikube addons disable metrics-server
+kubectl apply -f kubernetes-monitoring/kube-prometheus/manifests/setup
+kubectl apply -f kubernetes-monitoring/kube-prometheus/manifests
+```
+- Подготовлен [ServiceMonitor](kubernetes-monitoring/servicemonitor.yaml)
+```bash
+kubectl apply -f kubernetes-monitoring/servicemonitor.yaml
+```
+- Графики  
+![grafana](doc/images/grafana-nginx.png) 
+
+
+
 # HW.7 Kubernetes-operators
 ## В процессе сделано:
 - Подготовлена программа реализующая работу оператора [mysql-operator.py](kubernetes-operators/build/mysql-operator.py).
