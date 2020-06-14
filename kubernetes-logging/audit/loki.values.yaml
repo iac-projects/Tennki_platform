@@ -1,0 +1,26 @@
+loki:
+  enabled: true
+
+promtail:
+  enabled: true
+# Разрешаем запуск на всех нодах
+  tolerations:
+  - operator: "Exists"
+# Дополнительно монтируем директорию с логами аудита в promtail
+  extraVolumes:
+  - name: audit
+    hostPath:
+      path: /var/log/kube-audit
+  extraVolumeMounts:
+  - name: audit
+    mountPath: /var/log/kube-audit
+    readOnly: true
+# Создаем дополнительное задание для сбора аудит логов.
+  extraScrapeConfigs:
+    - job_name: kube-audit
+      pipeline_stages:
+      static_configs:
+      - labels:
+          job: kube-audit
+          host: kube-api
+          __path__: /var/log/kube-audit/*.log

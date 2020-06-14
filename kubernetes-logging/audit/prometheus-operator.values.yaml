@@ -1,0 +1,23 @@
+grafana:
+  adminPassword: password
+  ingress:
+    enabled: true
+    hosts:
+    - grafana.k8s.tennki.tk
+
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki:3100
+      access: proxy
+
+prometheus:
+  ingress:
+    enabled: true
+    hosts:
+    - prometheus.k8s.tennki.tk
+
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}

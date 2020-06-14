@@ -1,6 +1,82 @@
 # Tennki_platform
 Tennki Platform repository
 
+# HW.9 Kubernetes-logging
+## В процессе сделано:
+- Подготовлен k8s кластер в GCP
+- Установлено демо-приложение
+```bash
+kubectl create ns microservices-demo
+kubectl apply -f https://raw.githubusercontent.com/express42/otus-platform-snippets/master/Module-02/Logging/microservices-demo-without-resources.yaml -n microservices-demo
+```
+- Установлен nginx-ingress
+```bash
+kubectl create ns nginx-ingress
+helm upgrade --install nginx-ingress stable/nginx-ingress --wait --namespace=nginx-ingress -f nginx-ingress.values.yaml
+```
+- Установлен Prometheus + Grafana
+```
+kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagers.yaml
+kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
+kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_prometheuses.yaml
+kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
+kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_thanosrulers.yaml
+helm upgrade --install prometheus-operator stable/prometheus-operator --namespace observability --set prometheusOperator.createCustomResource=false -f prometheus-operator.values.yaml
+```
+Файл переменных [prometheus-operator.values.yaml](kubernetes-logging/prometheus-operator.values.yaml)
+- Установлен EFK стек. Kinbana
+```bash
+helm upgrade --install elasticsearch elastic/elasticsearch --namespace observability -f elasticsearch.values.yaml
+helm upgrade --install kibana elastic/kibana --namespace observability -f kibana.values.yaml
+helm upgrade --install fluent-bit stable/fluent-bit --namespace observability -f fluent-bit.values.yaml
+helm upgrade --install elasticsearch-exporter stable/elasticsearch-exporter --setes.uri=http://elasticsearch-master:9200 --set serviceMonitor.enabled=true --namespace=observability
+```
+Файл переменных [elasticsearch.values.yaml](kubernetes-logging/elasticsearch.values.yaml)  
+Файл переменных [kibana.values.yaml](kubernetes-logging/kibana.values.yaml)  
+Файл переменных [fluent-bit.values.yaml](kubernetes-logging/fluent-bit.values.yaml)
+- Создан дашборд ElasticSearch [export.ndjson](kubernetes-logging/export.ndjson)
+- Установлен Loki стек
+```bash
+helm repo add loki https://grafana.github.io/loki/charts
+helm repo update
+helm upgrade --install loki loki/loki-stack --namespace observability -f loki.values.yaml
+```
+Файл переменных [loki.values.yaml](kubernetes-logging/loki.values.yaml)
+- Создан дашборд Grafana [nginx-ingress.json](kubernetes-logging/nginx-ingress.json)  
+![Nginx-Dashboard](doc/images/nginx-dashboard.png)
+- |* Audit logging
+  - Развернут self-hosted кластер в GCP. 1 мастер + 2 ноды. Использован ansible для установки docker и kubeadm. Кластер развернут с помощью kubeadm
+  ```bash
+  kubeadm init --control-plane-endpoint="10.166.0.11:6443" --pod-network-cidr=10.244.0.0/16 --upload-certs
+  ```
+  - Настроен аудит. Добавлены следующие параметры в конфигурацию пода [kube-apiserver](kubernetes-logging/audit/kube-apiserver.yaml)
+  ```yaml
+    - --audit-policy-file=/etc/kubernetes/policies/audit-policy.yaml
+    - --audit-log-path=/var/log/kube-audit/audit.log
+    - --audit-log-format=json
+    - --audit-log-maxbackup=10
+    - --audit-log-maxsize=100
+    - --audit-log-maxage=7
+  ```
+  - Добавляем политику аудита на мастер хосте /etc/kubernetes/policies/[audit-policy.yaml](kubernetes-logging/audit/audit-policy.yml) Использована дефолтная политика [GCE](https://github.com/kubernetes/kubernetes/blob/master/cluster/gce/gci/configure-helper.sh#L1017-L1144).
+  - Установлен Prometheus+Grafana (http://grafana.k8s.tennki.tk)
+  ```bash
+  kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagers.yaml
+  kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
+  kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_prometheuses.yaml
+  kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
+  kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+  kubectl apply -f https://raw.githubusercontent.com/coreos/prometheus-operator/release-0.38/example/prometheus-operator-crd/monitoring.coreos.com_thanosrulers.yaml
+  helm upgrade --install prometheus-operator stable/prometheus-operator --set prometheusOperator.createCustomResource=false -f audit/prometheus-operator.values.yaml
+  ```
+  - Установлен Loki+Promtail
+  ```bash
+  helm upgrade --install loki loki/loki-stack -f audit/loki.values.yaml
+  ```
+  ![Audit-logs](doc/images/audit-logs.png)
+
+
 # HW.8 Kubernetes-monitoring
 ## В процессе сделано:
 - Подготовлен кастомный образ [nginx](kubernetes-monitoring/nginx) с модулем ngx_http_stub_status_module [nginx_conf](kubernetes-monitoring/nginx/conf). 

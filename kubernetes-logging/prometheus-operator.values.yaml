@@ -1,0 +1,44 @@
+prometheusOperator:
+  tolerations:
+    - key: node-role
+      operator: Equal
+      value: infra
+      effect: NoSchedule
+
+grafana:
+  adminPassword: password
+  ingress:
+    enabled: true
+    hosts:
+    - grafana.tennki.tk
+# Добавляем дополнительный Datasource Loki
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki:3100
+      access: proxy
+
+prometheus:
+  ingress:
+    enabled: true
+    hosts:
+    - prometheus.tennki.tk
+
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+
+    tolerations:
+      - key: node-role
+        operator: Equal
+        value: infra
+        effect: NoSchedule
+
+alertmanager:
+  alertmanagerSpec:
+    tolerations:
+      - key: node-role
+        operator: Equal
+        value: infra
+        effect: NoSchedule
