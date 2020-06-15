@@ -1,0 +1,9 @@
+loki:
+  enabled: true
+
+promtail:
+  enabled: true
+# Разрешаем запуск promtail на всех нодах
+  tolerations:
+  - operator: "Exists"
+
