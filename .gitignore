@@ -2,3 +2,5 @@
 .venv
 __*
 .vscode
+temp/
+*.key

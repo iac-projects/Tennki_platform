@@ -1,0 +1,41 @@
+Unseal Key 1: J9rYhuKu3yiXF83ftvCukKwnThchbH+7Ice8FhBpm2I=
+
+Initial Root Token: s.Odn2G0LWhZQDqnVgMu202bKo
+
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1{ 0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+  "request_id": "45985a51-5ea1-9fee-4e7b-abf05c91e7ae",
+  "lease_id": "",
+6  "renewable": false,
+  "lease_duration": 0,
+  "data": null,
+  "wrap_info": null,
+  "warnings": null,
+  "auth": {
+    "client_token": "s.8WSHPrTRNXoTzM4ObaNibwwt",
+    "accessor": "pebxrfs05HMwSFjZWHgqKYDB",
+    "policies": [
+      "default",
+      "otus-policy"
+    ],
+    "token_policies": [
+      "default",
+      "otus-policy"
+    ],
+    "metadata": {
+      "role": "otus",
+      "service_account_name": "vault-auth",
+      "service_account_namespace": "default",
+      "service_account_secret_name": "vault-auth-token-qnfm7",
+05  100   666  100   939        "service_account_uid": "240fa155-fdba-4d48-88ab-fa0c1dfcf5b4"
+    } 8222  11592 --:--:-- --:--:-- --:--:-,
+    "lease_duration": 86400,
+    "renewable": true,
+    "entity_id": "5618df15-a6bb-7f63-6857-088e78a3cb8e",
+    "token_type": "service",
+    "orphan": true
+  }
+}
+- 20062
