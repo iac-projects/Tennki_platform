@@ -1,6 +1,267 @@
 # Tennki_platform
 Tennki Platform repository
 
+# HW.11 Kubernetes-gitops
+**Репозиторий с кодом приложения**
+https://gitlab.com/Tennki/microservices-demo 
+
+## В процессе сделано:
+- Подготовлен репозиторий с демо-приложением https://gitlab.com/Tennki/microservices-demo
+- Сделан CI для автоматической сборки образов приложения и загрузки их в репозиторий. [gitlab-ci.yml](kubernetes-gitops/.gitlab-ci.yml)
+- Развернут кластер в gke
+```bash
+# Создание кластера
+gcloud beta container clusters create gitops \
+    --addons=Istio --istio-config=auth=MTLS_PERMISSIVE \
+    --cluster-version=1.16.9-gke.6 \
+    --machine-type=n1-standard-2 \
+    --num-nodes=4
+# Включение Istio как плагина. Работает криво, пришлось ставить через istioctl.
+gcloud beta container clusters update gitops \
+    --update-addons=Istio=ENABLED --istio-config=auth=MTLS_PERMISSIVE
+# Отлючение Istio
+gcloud beta container clusters update gitops \
+  --update-addons=Istio=DISABLED
+```
+- Установлен Istio
+```bash
+istioctl operator init
+kubectl create ns istio-system
+# Разворачиваем с профилем demo со включенными компонентами мониторинга и трейсинга
+kubectl apply -f - <<EOF
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  namespace: istio-system
+  name: example-istiocontrolplane
+spec:
+  profile: demo
+EOF
+# Публикуем ресурсы (grafana,kiali,prometheus,jaeger) наружу.
+kubectl apply -f kubernetes-gitops/istio/
+```
+- Установлен Flux
+```bash
+kubectl apply -f https://raw.githubusercontent.com/fluxcd/helm-operator/master/deploy/crds.yaml
+helm repo add fluxcd https://charts.fluxcd.io
+kubectl create namespace flux
+helm upgrade --install flux fluxcd/flux -f flux.values.yaml --namespace flux
+helm upgrade --install helm-operator fluxcd/helm-operator -f helm-operator.values.yaml --namespace flux
+# Получаем ssh ключ flux и добавляем его в репозиторий
+fluxctl identity --k8s-fwd-ns flux
+
+# flux namespace creation log:
+ts=2020-06-29T09:52:22.76400505Z caller=sync.go:605 method=Sync cmd="kubectl apply -f -" took=640.25118ms err=null output="namespace/microservices-demo created"
+```
+- Подготовлены helmrelease файлы для helm-operator (https://gitlab.com/Tennki/microservices-demo/-/tree/master/deploy/releases)
+- Выполнено обновление сервиса frontend
+```bash
+# Лог обновления helmrelease frontend в через helm-operatror
+ts=2020-06-29T14:11:57.054791338Z caller=release.go:75 component=release release=frontend targetNamespace=microservices-demo resource=microservices-demo:helmrelease/frontend helmVersion=v3 info="starting sync run"
+ts=2020-06-29T14:11:57.311301633Z caller=release.go:289 component=release release=frontend targetNamespace=microservices-demo resource=microservices-demo:helmrelease/frontend helmVersion=v3 info="running upgrade" action=upgrade
+ts=2020-06-29T14:11:57.342966237Z caller=helm.go:69 component=helm version=v3 info="preparing upgrade for frontend" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.34857561Z caller=helm.go:69 component=helm version=v3 info="resetting values to the chart's original version" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.839740316Z caller=helm.go:69 component=helm version=v3 info="performing update for frontend" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.854567296Z caller=helm.go:69 component=helm version=v3 info="creating upgraded release for frontend" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.864146087Z caller=helm.go:69 component=helm version=v3 info="checking 5 resources for changes" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.871875793Z caller=helm.go:69 component=helm version=v3 info="Looks like there are no changes for Service \"frontend\"" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.883710258Z caller=helm.go:69 component=helm version=v3 info="Created a new Deployment called \"frontend-hipster\" in microservices-demo\n" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.908296401Z caller=helm.go:69 component=helm version=v3 info="Looks like there are no changes for Gateway \"frontend-gateway\"" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.94174423Z caller=helm.go:69 component=helm version=v3 info="Looks like there are no changes for ServiceMonitor \"frontend\"" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.97658965Z caller=helm.go:69 component=helm version=v3 info="Looks like there are no changes for VirtualService \"frontend\"" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:57.983771404Z caller=helm.go:69 component=helm version=v3 info="Deleting \"frontend\" in microservices-demo..." targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:58.443024855Z caller=helm.go:69 component=helm version=v3 info="updating status for upgraded release for frontend" targetNamespace=microservices-demo release=frontend
+ts=2020-06-29T14:11:58.482377921Z caller=release.go:309 component=release release=frontend targetNamespace=microservices-demo resource=microservices-demo:helmrelease/frontend helmVersion=v3 info="upgrade succeeded" revision=dde0e025fbc7c6c1cac0162a1c67aab5e17864e3 phase=upgrade
+```
+- Установлен Flagger
+```bash
+flagger install
+kubectl apply -f https://raw.githubusercontent.com/weaveworks/flagger/master/artifacts/flagger/crd.yaml
+helm upgrade --install flagger flagger/flagger \
+--namespace istio-system \
+--set crd.create=false \
+--set meshProvider=istio \
+--set metricsServer=http://prometheus:9090
+```
+- Добавлен лэйбл для namespace microservices-demo.
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: microservices-demo
+  labels:
+    istio-injection: enabled
+```
+Flux применил изменения в кластере. 
+```bash
+# Пересоздаем поды чтобы istio добавил sidecar контейнеры
+kubectl delete pods --all -n microservices-demo
+# Проверка
+kubectl get pods -n microservices-demo 
+NAME                                     READY   STATUS    RESTARTS   AGE
+adservice-847589476d-2stgq               2/2     Running   0          4h33m
+cartservice-85cb49794f-hhvvs             2/2     Running   0          4h33m
+cartservice-redis-master-0               2/2     Running   0          21h
+checkoutservice-6488cd446b-jk68l         2/2     Running   0          4h32m
+currencyservice-69bd84979d-b65hh         2/2     Running   0          4h34m
+emailservice-6659c8b578-jfmkv            2/2     Running   0          4h34m
+frontend-primary-78844554f9-kxp2p        2/2     Running   0          4h27m
+loadgenerator-68b7ccb7dd-czs6l           2/2     Running   2          4h31m
+paymentservice-7cfb946d9d-nz7hl          2/2     Running   0          4h34m
+productcatalogservice-64ffbc99d6-8qchm   2/2     Running   0          4h32m
+recommendationservice-56f9b86fb4-2227c   2/2     Running   0          4h34m
+shippingservice-76747dd4c4-fd6bz         2/2     Running   0          4h30m
+```
+- Добавлены Istio Gateway и VirtualService для сервиса frontend.
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: frontend-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "{{ .Values.ingress.host }}"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: frontend
+spec:
+  hosts:
+  - "{{ .Values.ingress.host }}"
+  gateways:
+  - frontend-gateway
+  http:
+  - route:
+    - destination:
+        host: frontend
+        port:
+          number: 80
+```
+- Добавлен ресурс canary для сервиса frontend. 
+```yaml
+apiVersion: flagger.app/v1alpha3
+kind: Canary
+metadata:
+  name: frontend
+spec:
+  provider: istio
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  progressDeadlineSeconds: 60
+  service:
+    port: 80
+    targetPort: 8080
+    gateways:
+    - frontend-gateway
+    hosts:
+    - {{ .Values.ingress.host }}
+    trafficPolicy:
+      tls:
+        mode: DISABLE
+    retries:
+      attempts: 3
+      perTryTimeout: 1s
+      retryOn: "gateway-error,connect-failure,refused-stream"
+  analysis:
+    interval: 1m
+    threshold: 1
+    maxWeight: 30
+    stepWeight: 10
+    metrics:
+    - name: request-success-rate
+      threshold: 99
+      interval: 1m
+```
+- Выполнен canary deploy сервиса frontend.
+```bash
+k describe canary -n microservices-demo frontend
+Events:
+  Type     Reason  Age                From     Message
+  ----     ------  ----               ----     -------
+  Warning  Synced  22m                flagger  deployment frontend.microservices-demo get query error: deployments.apps "frontend" not found
+  Warning  Synced  21m                flagger  frontend-primary.microservices-demo not ready: waiting for rollout to finish: observed deployment generation less then desired generation
+  Normal   Synced  20m (x2 over 21m)  flagger  all the metrics providers are available!
+  Normal   Synced  20m                flagger  Initialization done! frontend.microservices-demo
+  Normal   Synced  10m                flagger  New revision detected! Scaling up frontend.microservices-demo
+  Normal   Synced  9m6s               flagger  Starting canary analysis for frontend.microservices-demo
+  Normal   Synced  9m6s               flagger  Advance frontend.microservices-demo canary weight 10
+  Normal   Synced  8m6s               flagger  Advance frontend.microservices-demo canary weight 20
+  Normal   Synced  7m6s               flagger  Advance frontend.microservices-demo canary weight 30
+  Normal   Synced  6m6s               flagger  Copying frontend.microservices-demo template spec to frontend-primary.microservices-demo
+  Normal   Synced  5m6s               flagger  Routing all traffic to primary
+  Normal   Synced  4m6s               flagger  (combined from similar events): Promotion completed! Scaling down frontend.microservices-demo
+k get canaries -n microservices-demo frontend
+NAME       STATUS      WEIGHT   LASTTRANSITIONTIME
+frontend   Succeeded   0        2020-06-30T08:15:03Z
+```
+- Выполнен canary deploy сервиса adservice
+```yaml
+apiVersion: flagger.app/v1alpha3
+kind: Canary
+metadata:
+  name: adservice
+spec:
+  provider: istio
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: adservice
+  progressDeadlineSeconds: 60
+  service:
+    port: 9555
+    targetPort: 9555
+    trafficPolicy:
+      tls:
+        mode: DISABLE
+    retries:
+      attempts: 3
+      perTryTimeout: 1s
+      retryOn: "connect-failure,refused-stream"
+  analysis:
+    interval: 1m
+    threshold: 1
+    maxWeight: 30
+    stepWeight: 10
+    metrics:
+    - name: request-success-rate
+      threshold: 99
+      interval: 1m
+```
+![grafana](doc/images/grafana-adservice.png)
+- Добавлена возможность отправки оповещений в Slack
+```bash
+helm upgrade -i flagger flagger/flagger -n istio-system\
+--set slack.url=https://hooks.slack.com/services/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 \
+--set slack.channel=gitops \
+--set slack.user=flagger
+```
+![slack-notification](doc/images/slack-notification.png)
+- Установлен ArgoCD
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# Публикуем UI наружу через istio
+kubectl apply -f kubernetes-gitops/argocd/argocd.istio.yaml
+```
+- Подготовлен namespace demo для развертывания приложения через argocd 
+```bash
+kubectl create namespace demo
+kubectl label namespace demo istio-injection=enabled
+```
+- Созданы отдельные приложения для сервисов из общего [репозитория](https://gitlab.com/Tennki/microservices-demo) путем указания путей до helm чартов (deploy/charts/adservice, deploy/charts/cartservice и т.д.).  
+![argocd](doc/images/argocd.png)
+![shop](doc/images/argo-shop.png)
+
 # HW.10 Kubernetes-vault
 ## В процессе сделано:
 
