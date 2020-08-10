@@ -239,7 +239,27 @@ total 4
 ### Развернут k8s-кластер с хранилищем на iSCSI, протестирована работа k8s с lvm snapshot:
 - Развернут k8s кластер в GCP. 1 мастер нода, 1 воркер нода, 1 сервер хранения. Все сервера на Ubuntu. k8s развертывался через kubeadm.
 ```bash
-
+# Установка docker, kubeadm, kubelet, kubectl
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo apt-get update && sudo apt-get install -y apt-transport-https curl
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+systemctl daemon-reload
+systemctl restart kubelet
+# Добавляем ip мастера в /etc/hosts, на мастере и на воркере
+echo "10.166.0.19 dev.gcp" >> /etc/hosts
+# Инициализация кластера
+kubeadm init --control-plane-endpoint="dev.gcp:6443" --pod-network-cidr=10.244.0.0/16 --upload-certs --ignore-preflight-errors=NumCPU
+kubeadm join dev.gcp:6443 --token veclc2.3917pyu06zfnkpce \
+    --discovery-token-ca-cert-hash sha256:a39a3019f802845770744d0a227ac6dd924aae063bc3234c4b952be04af801b7
+# Добавление воркера
+kubeadm join dev.gcp:6443 --token veclc2.3917pyu06zfnkpce \
+    --discovery-token-ca-cert-hash sha256:a39a3019f802845770744d0a227ac6dd924aae063bc3234c4b952be04af801b7
 ```
 - Выполнена настройка iSCSI target
 ```bash
