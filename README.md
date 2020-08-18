@@ -1,6 +1,421 @@
 # Tennki_platform
 Tennki Platform repository
 
+# HW.14 Kubernetes-storage
+## В процессе сделано:
+
+- Выполнено развертывание k8s кластера v1.17 через kubeadm. Кластер создавался в GCP.
+Конфигурация кластера 4 ВМ GCP, ОС Ubuntu 18.04 LTS:
+  - master - 1 экземпляр (n1-standard-2)
+  - worker - 3 экземпляра (n1-standard-1)
+```bash
+# Усатновку компонентов необходимо выполнить на всех нодах.
+# Отключаем swap
+sudo -i
+swapoff -a
+
+# Включаем маршрутизацию
+cat > /etc/sysctl.d/99-kubernetes-cri.conf <<EOF
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+sysctl --system
+
+# Устанавливаем Docker
+apt-get update && apt-get install -y \
+apt-transport-https ca-certificates curl software-properties-common gnupg2
+
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+add-apt-repository \
+"deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+$(lsb_release -cs) \
+stable"
+
+apt-get update && apt-get install -y \
+containerd.io=1.2.13-1 \
+docker-ce=5:19.03.8~3-0~ubuntu-$(lsb_release -cs) \
+docker-ce-cli=5:19.03.8~3-0~ubuntu-$(lsb_release -cs)
+
+# Настрока docker daemon.
+cat > /etc/docker/daemon.json <<EOF
+{
+"exec-opts": ["native.cgroupdriver=systemd"],
+"log-driver": "json-file",
+"log-opts": {
+"max-size": "100m"
+},
+"storage-driver": "overlay2"
+}
+EOF
+mkdir -p /etc/systemd/system/docker.service.d
+
+# Перезапуск docker.
+systemctl daemon-reload
+systemctl restart docker
+
+
+# Устанавливаем kubeadm, kubelet and kubectl
+apt-get update && apt-get install -y apt-transport-https curl
+
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+cat <<EOF > /etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+apt-get update
+apt-get install -y kubelet=1.17.4-00 kubeadm=1.17.4-00 kubectl=1.17.4-00
+
+# Создаем кластер
+kubeadm init --pod-network-cidr=192.168.0.0/24
+# В выводе будут:
+# команда для копирования конфига kubectl
+# сообщение о том, что необходимо установить сетевой плагин
+# команда для присоединения control-plane ноды
+# команда для присоединения worker ноды
+
+# Копируем конфиг kubectl
+mkdir -p $HOME/.kube
+cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+chown $(id -u):$(id -g) $HOME/.kube/config
+
+# Устанавливаем сетевой плагин
+kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+# Присоединяем остальные ноды
+kubeadm join 10.166.0.23:6443 --token c0vuc8.j7sxcum8oi0ciyu5 \
+    --discovery-token-ca-cert-hash sha256:5a54a19a34b5840cf9cd367b1e61eda35b847e235a0b9f47294d1bd7bfeaa925
+
+# Выпоняем проверку
+kubectl get nodes
+NAME      STATUS   ROLES    AGE     VERSION
+master1   Ready    master   2m46s   v1.17.4
+node1     Ready    <none>   50s     v1.17.4
+node2     Ready    <none>   39s     v1.17.4
+node3     Ready    <none>   34s     v1.17.4
+
+# Звпуск приложения и проверка
+kubectl apply -f deployment.yaml
+kkubectl get pods
+NAME                               READY   STATUS    RESTARTS   AGE
+nginx-deployment-c8fd555cc-c7shk   1/1     Running   0          4m38s
+nginx-deployment-c8fd555cc-n7rwf   1/1     Running   0          4m38s
+nginx-deployment-c8fd555cc-qcj86   1/1     Running   0          4m38s
+nginx-deployment-c8fd555cc-zvl4j   1/1     Running   0          4m38s
+```
+- Выполнено обновление кластера до v 1.18
+```bash
+# Обновляем мастер-ноду
+apt-get update && apt-get install -y kubeadm=1.18.0-00 \
+kubelet=1.18.0-00 kubectl=1.18.0-00
+
+# Проверка
+k get nodes
+NAME      STATUS   ROLES    AGE     VERSION
+master1   Ready    master   10m     v1.18.0
+node1     Ready    <none>   8m33s   v1.17.4
+node2     Ready    <none>   8m22s   v1.17.4
+node3     Ready    <none>   8m17s   v1.17.4
+
+kubelet --version
+Kubernetes v1.18.0
+cat /etc/kubernetes/manifests/kube-apiserver.yaml
+image: k8s.gcr.io/kube-apiserver:v1.17.9
+
+# Планируем обновление остальных компонентов
+kubeadm upgrade plan
+[upgrade/config] Making sure the configuration is correct:
+[upgrade/config] Reading configuration from the cluster...
+[upgrade/config] FYI: You can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -oyaml'
+[preflight] Running pre-flight checks.
+[upgrade] Running cluster health checks
+[upgrade] Fetching available versions to upgrade to
+[upgrade/versions] Cluster version: v1.17.9
+[upgrade/versions] kubeadm version: v1.18.0
+[upgrade/versions] Latest stable version: v1.18.6
+[upgrade/versions] Latest stable version: v1.18.6
+[upgrade/versions] Latest version in the v1.17 series: v1.17.9
+[upgrade/versions] Latest version in the v1.17 series: v1.17.9
+Components that must be upgraded manually after you have upgraded the control plane with 'kubeadm upgrade apply':
+COMPONENT   CURRENT       AVAILABLE
+Kubelet     3 x v1.17.4   v1.18.6
+            1 x v1.18.0   v1.18.6
+Upgrade to the latest stable version:
+COMPONENT            CURRENT   AVAILABLE
+API Server           v1.17.9   v1.18.6
+Controller Manager   v1.17.9   v1.18.6
+Scheduler            v1.17.9   v1.18.6
+Kube Proxy           v1.17.9   v1.18.6
+CoreDNS              1.6.5     1.6.7
+Etcd                 3.4.3     3.4.3-0
+You can now apply the upgrade by executing the following command:
+	kubeadm upgrade apply v1.18.6
+Note: Before you can perform this upgrade, you have to update kubeadm to v1.18.6.
+____________________________________________________________________
+
+# Выполняем обновление
+kubeadm upgrade apply v1.18.0
+---
+[upgrade/successful] SUCCESS! Your cluster was upgraded to "v1.18.0". Enjoy!
+---
+
+# Проверка
+kubeadm version
+  kubeadm version: &version.Info{Major:"1", Minor:"18", GitVersion:"v1.18.0", GitCommit:"9e991415386e4cf155a24b1da15becaa390438d8", GitTreeState:"clean", BuildDate:"2020-03-25T14:56:30Z", GoVersion:"go1.13.8", Compiler:"gc", Platform:"linux/amd64"}
+kubelet --version
+  Kubernetes v1.18.0
+kubectl version
+  Client Version: version.Info{Major:"1", Minor:"18", GitVersion:"v1.18.0", GitCommit:"9e991415386e4cf155a24b1da15becaa390438d8", GitTreeState:"clean", BuildDate:"2020-03-25T14:58:59Z", GoVersion:"go1.13.8", Compiler:"gc", Platform:"linux/amd64"}
+  Server Version: version.Info{Major:"1", Minor:"18", GitVersion:"v1.18.0", GitCommit:"9e991415386e4cf155a24b1da15becaa390438d8", GitTreeState:"clean", BuildDate:"2020-03-25T14:50:46Z", GoVersion:"go1.13.8", Compiler:"gc", Platform:"linux/amd64"}
+kubectl describe pod -n kube-system kube-apiserver-master1
+  Name:                 kube-apiserver-master1
+  Namespace:            kube-system
+  Priority:             2000000000
+  Priority Class Name:  system-cluster-critical
+  Node:                 master1/10.166.0.23
+  Start Time:           Wed, 12 Aug 2020 05:28:30 +0000
+  Labels:               component=kube-apiserver
+                        tier=control-plane
+  Annotations:          kubeadm.kubernetes.io/kube-apiserver.advertise-address.endpoint: 10.166.0.23:6443
+                        kubernetes.io/config.hash: b605743da174bb8fd72ff85f7ff3ee24
+                        kubernetes.io/config.mirror: b605743da174bb8fd72ff85f7ff3ee24
+                        kubernetes.io/config.seen: 2020-08-12T05:42:59.552706251Z
+                        kubernetes.io/config.source: file
+  Status:               Running
+  IP:                   10.166.0.23
+  IPs:
+    IP:           10.166.0.23
+  Controlled By:  Node/master1
+  Containers:
+    kube-apiserver:
+      Container ID:  docker://620c75017e404ede86de076d18162bcc28e63b2020535dd7d21163efa815e3b0
+      Image:         k8s.gcr.io/kube-apiserver:v1.18.0
+      Image ID:      docker-pullable://k8s.gcr.io/kube-apiserver@sha256:fc4efb55c2a7d4e7b9a858c67e24f00e739df4ef5082500c2b60ea0903f18248
+      Port:          <none>
+      Host Port:     <none>
+      Command:
+        kube-apiserver
+        --advertise-address=10.166.0.23
+        --allow-privileged=true
+        --authorization-mode=Node,RBAC
+        --client-ca-file=/etc/kubernetes/pki/ca.crt
+        --enable-admission-plugins=NodeRestriction
+        --enable-bootstrap-token-auth=true
+        --etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt
+        --etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt
+        --etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key
+        --etcd-servers=https://127.0.0.1:2379
+        --insecure-port=0
+        --kubelet-client-certificate=/etc/kubernetes/pki/apiserver-kubelet-client.crt
+        --kubelet-client-key=/etc/kubernetes/pki/apiserver-kubelet-client.key
+        --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+        --proxy-client-cert-file=/etc/kubernetes/pki/front-proxy-client.crt
+        --proxy-client-key-file=/etc/kubernetes/pki/front-proxy-client.key
+        --requestheader-allowed-names=front-proxy-client
+        --requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt
+        --requestheader-extra-headers-prefix=X-Remote-Extra-
+        --requestheader-group-headers=X-Remote-Group
+        --requestheader-username-headers=X-Remote-User
+        --secure-port=6443
+        --service-account-key-file=/etc/kubernetes/pki/sa.pub
+        --service-cluster-ip-range=10.96.0.0/12
+        --tls-cert-file=/etc/kubernetes/pki/apiserver.crt
+        --tls-private-key-file=/etc/kubernetes/pki/apiserver.key
+      State:          Running
+        Started:      Wed, 12 Aug 2020 05:43:00 +0000
+      Ready:          True
+      Restart Count:  0
+      Requests:
+        cpu:        250m
+      Liveness:     http-get https://10.166.0.23:6443/healthz delay=15s timeout=15s period=10s #success=1 #failure=8
+      Environment:  <none>
+      Mounts:
+        /etc/ca-certificates from etc-ca-certificates (ro)
+        /etc/kubernetes/pki from k8s-certs (ro)
+        /etc/ssl/certs from ca-certs (ro)
+        /usr/local/share/ca-certificates from usr-local-share-ca-certificates (ro)
+        /usr/share/ca-certificates from usr-share-ca-certificates (ro)
+  Conditions:
+    Type              Status
+    Initialized       True
+    Ready             True
+    ContainersReady   True
+    PodScheduled      True
+  Volumes:
+    ca-certs:
+      Type:          HostPath (bare host directory volume)
+      Path:          /etc/ssl/certs
+      HostPathType:  DirectoryOrCreate
+    etc-ca-certificates:
+      Type:          HostPath (bare host directory volume)
+      Path:          /etc/ca-certificates
+      HostPathType:  DirectoryOrCreate
+    k8s-certs:
+      Type:          HostPath (bare host directory volume)
+      Path:          /etc/kubernetes/pki
+      HostPathType:  DirectoryOrCreate
+    usr-local-share-ca-certificates:
+      Type:          HostPath (bare host directory volume)
+      Path:          /usr/local/share/ca-certificates
+      HostPathType:  DirectoryOrCreate
+    usr-share-ca-certificates:
+      Type:          HostPath (bare host directory volume)
+      Path:          /usr/share/ca-certificates
+      HostPathType:  DirectoryOrCreate
+  QoS Class:         Burstable
+  Node-Selectors:    <none>
+  Tolerations:       :NoExecute
+  Events:
+    Type    Reason   Age    From              Message
+    ----    ------   ----   ----              -------
+    Normal  Pulled   4m48s  kubelet, master1  Container image "k8s.gcr.io/kube-apiserver:v1.18.0" already present on machine
+    Normal  Created  4m48s  kubelet, master1  Created container kube-apiserver
+    Normal  Started  4m48s  kubelet, master1  Started container kube-apiserver
+
+# Обновляем воркер-ноды
+# Вывод ноды из шедулинга
+k drain node1
+  node/node1 cordoned
+  error: unable to drain node "node1", aborting command...
+  There are pending nodes to be drained:
+  node1
+  error: cannot delete DaemonSet-managed Pods (use --ignore-daemonsets to ignore): kube-system/calico-node-k7fvk, kube-system/kube-proxy-5nqg9
+
+k drain node1 --ignore-daemonsets
+  node/node1 already cordoned
+  WARNING: ignoring DaemonSet-managed Pods: kube-system/calico-node-k7fvk, kube-system/kube-proxy-5nqg9
+  evicting pod default/nginx-deployment-c8fd555cc-n7rwf
+  evicting pod kube-system/coredns-66bff467f8-v8vr6
+  pod/nginx-deployment-c8fd555cc-n7rwf evicted
+  pod/coredns-66bff467f8-v8vr6 evicted
+  node/node1 evicted
+
+k get nodes
+  NAME      STATUS                     ROLES    AGE   VERSION
+  master1   Ready                      master   22m   v1.18.0
+  node1     Ready,SchedulingDisabled   <none>   20m   v1.17.4
+  node2     Ready                      <none>   20m   v1.17.4
+  node3     Ready                      <none>   20m   v1.17.4
+
+# Обновление компонентов
+apt-get install -y kubelet=1.18.0-00 kubeadm=1.18.0-00
+systemctl restart kubelet
+
+# Возвращаем ноду
+k uncordon node1
+node/node1 uncordoned
+
+# Проверка
+k get nodes
+NAME      STATUS   ROLES    AGE   VERSION
+master1   Ready    master   23m   v1.18.0
+node1     Ready    <none>   21m   v1.18.0
+node2     Ready    <none>   21m   v1.17.4
+node3     Ready    <none>   21m   v1.17.4
+
+# Аналогично обновляем  остальные воркер-ноды
+k drain node2 --ignore-daemonsets
+  node/node2 cordoned
+  WARNING: ignoring DaemonSet-managed Pods: kube-system/calico-node-96274, kube-system/kube-proxy-tjgzv
+  evicting pod default/nginx-deployment-c8fd555cc-b2wj2
+  evicting pod default/nginx-deployment-c8fd555cc-c7shk
+  evicting pod default/nginx-deployment-c8fd555cc-zvl4j
+  pod/nginx-deployment-c8fd555cc-b2wj2 evicted
+  pod/nginx-deployment-c8fd555cc-zvl4j evicted
+  pod/nginx-deployment-c8fd555cc-c7shk evicted
+  node/node2 evicted
+k drain node3 --ignore-daemonsets
+  node/node3 cordoned
+  WARNING: ignoring DaemonSet-managed Pods: kube-system/calico-node-pcj94, kube-system/kube-proxy-5x9lw
+  evicting pod default/nginx-deployment-c8fd555cc-qcj86
+  evicting pod kube-system/coredns-66bff467f8-mjkhw
+  pod/nginx-deployment-c8fd555cc-qcj86 evicted
+  pod/coredns-66bff467f8-mjkhw evicted
+  node/node3 evicted
+
+k get nodes
+  NAME      STATUS                     ROLES    AGE   VERSION
+  master1   Ready                      master   27m   v1.18.0
+  node1     Ready                      <none>   25m   v1.18.0
+  node2     Ready,SchedulingDisabled   <none>   24m   v1.18.0
+  node3     Ready,SchedulingDisabled   <none>   24m   v1.18.0
+k uncordon node2 node3
+  node/node2 uncordoned
+  node/node3 uncordoned
+# Кластер обновлен
+k get nodes
+  NAME      STATUS   ROLES    AGE   VERSION
+  master1   Ready    master   27m   v1.18.0
+  node1     Ready    <none>   25m   v1.18.0
+  node2     Ready    <none>   25m   v1.18.0
+  node3     Ready    <none>   25m   v1.18.0
+```
+
+- Выполнено автоматическое развертывание HA k8s кластера через [kubespray](https://github.com/kubernetes-sigs/kubespray)  
+Конфигурация кластера 6 ВМ GCP, ОС Ubuntu 18.04 LTS:
+  - master - 3 экземпляра (n1-standard-2)
+  - worker - 3 экземпляра (n1-standard-1)
+```bash
+# Копируем репозиторий kubespray
+git clone https://github.com/kubernetes-sigs/kubespray.git
+# Установка зависимостей
+sudo pip install -r requirements.txt
+# Копирование примера конфига в отдельную директорию и заполняем его
+cp -rfp inventory/sample inventory/mycluster
+```
+Копия [инвентори](kubernetes-production-clusters/inventory.ini)
+```yaml
+# Указываем внешние и внутренние адреса нод и имена нод etc-кластера
+[all]
+master1 ansible_host=35.228.102.42  ip=10.166.0.27 etcd_member_name=etcd1
+master2 ansible_host=35.228.137.20 ip=10.166.0.28 etcd_member_name=etcd2
+master3 ansible_host=35.228.68.31  ip=10.166.0.29 etcd_member_name=etcd3
+node1 ansible_host=35.228.231.39  ip=10.166.0.31
+node2 ansible_host=35.228.130.28  ip=10.166.0.32
+node3 ansible_host=35.228.53.215  ip=10.166.0.33
+
+# ## configure a bastion host if your nodes are not directly reachable
+# bastion ansible_host=x.x.x.x ansible_user=some_user
+# Указываем мастер ноды
+[kube-master]
+master1
+master2
+master3
+# Указываем на какие ноды устанавливать etcd
+[etcd]
+master1
+master2
+master3
+# Указываем воркер ноды
+[kube-node]
+node1
+node2
+node3
+# Выбор сетевого плагина
+[calico-rr]
+
+[k8s-cluster:children]
+kube-master
+kube-node
+calico-rr
+
+```
+```bash
+# Выполняем развертывание
+ansible-playbook -i inventory/mycluster/inventory.ini --become --become-user=root \
+--user=${SSH_USERNAME} --key-file=${SSH_PRIVATE_KEY} cluster.yml
+.....
+
+# Проверка
+k get nodes -o wide
+  NAME      STATUS   ROLES    AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION   CONTAINER-RUNTIME
+  master1   Ready    master   13m   v1.18.6   10.166.0.27   <none>        Ubuntu 18.04.5 LTS   5.3.0-1032-gcp   docker://19.3.12
+  master2   Ready    master   12m   v1.18.6   10.166.0.28   <none>        Ubuntu 18.04.5 LTS   5.3.0-1032-gcp   docker://19.3.12
+  master3   Ready    master   12m   v1.18.6   10.166.0.29   <none>        Ubuntu 18.04.5 LTS   5.3.0-1032-gcp   docker://19.3.12
+  node1     Ready    <none>   10m   v1.18.6   10.166.0.31   <none>        Ubuntu 18.04.5 LTS   5.3.0-1032-gcp   docker://19.3.12
+  node2     Ready    <none>   10m   v1.18.6   10.166.0.32   <none>        Ubuntu 18.04.5 LTS   5.3.0-1032-gcp   docker://19.3.12
+  node3     Ready    <none>   10m   v1.18.6   10.166.0.33   <none>        Ubuntu 18.04.5 LTS   5.3.0-1032-gcp   docker://19.3.12
+```
+
 # HW.12 Kubernetes-storage
 ## В процессе сделано:
 ### Установлен CSI драйвер и протестирован функционал snapshot-ов:
