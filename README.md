@@ -1,6 +1,11 @@
 # Tennki_platform
 Tennki Platform repository
 
+
+
+
+
+
 # HW.14 Kubernetes-storage
 ## В процессе сделано:
 
@@ -414,6 +419,216 @@ k get nodes -o wide
   node1     Ready    <none>   10m   v1.18.6   10.166.0.31   <none>        Ubuntu 18.04.5 LTS   5.3.0-1032-gcp   docker://19.3.12
   node2     Ready    <none>   10m   v1.18.6   10.166.0.32   <none>        Ubuntu 18.04.5 LTS   5.3.0-1032-gcp   docker://19.3.12
   node3     Ready    <none>   10m   v1.18.6   10.166.0.33   <none>        Ubuntu 18.04.5 LTS   5.3.0-1032-gcp   docker://19.3.12
+```
+
+# HW.13 Kubernetes-debug
+## В процессе сделано:
+### Kubectl debug
+- Выполнена работа с kubectl debug
+```bash
+#Устанавливам kubectl debug
+brew install aylei/tap/kubectl-debug
+
+# И применяем манифест агента
+kubectl apply -f strace/agent_daemonset.yml
+daemonset.apps/debug-agent created
+
+# Запускаем pod с приложением
+kubectl apply -f strace/nginx.yaml
+pod/nginx created
+
+#Запускаем debug
+kubectl-debug nginx --agentless=false --port-forward=true
+
+bash-5.0# strace -p 1
+strace: attach: ptrace(PTRACE_SEIZE, 1): Operation not permitted
+
+# Не хватает capability, которые есть в версии v0.1.1.
+# Меняем image tag и применяем
+kubectl apply -f strace/agent_daemonset.yml
+daemonset.apps/debug-agent configured
+
+# Проверяем
+kubectl-debug nginx --agentless=false --port-forward=true
+bash-5.0# strace -c -p1
+strace: Process 1 attached
+```
+
+### Iptables-tailer
+- Развернут кластер в GKE 1.16.13
+- Установлено тестовое приложение
+```bash
+kubectl apply -f kit/deploy/crd.yaml
+kubectl apply -f kit/deploy/rbac.yaml
+kubectl apply -f kit/deploy/operator.yaml
+kubectl apply -f kit/deploy/cr.yaml
+# Проверка
+kubectl get pods
+NAME                                READY   STATUS    RESTARTS   AGE
+netperf-client-e1220f798de2         1/1     Running   0          3s
+netperf-operator-85569b59dd-kg4sf   1/1     Running   0          33s
+netperf-server-e1220f798de2         1/1     Running   0          9s
+
+kubectl describe netperf.app.example.com/example           
+Name:         example
+Namespace:    default
+Labels:       <none>
+Annotations:  kubectl.kubernetes.io/last-applied-configuration:
+                {"apiVersion":"app.example.com/v1alpha1","kind":"Netperf","metadata":{"annotations":{},"name":"example","namespace":"default"}}
+API Version:  app.example.com/v1alpha1
+Kind:         Netperf
+Metadata:
+  Creation Timestamp:  2020-08-20T05:53:04Z
+  Generation:          4
+  Resource Version:    3317
+  Self Link:           /apis/app.example.com/v1alpha1/namespaces/default/netperfs/example
+  UID:                 b6e5a6d0-7cfb-4177-9a16-e1220f798de2
+Spec:
+  Client Node:  
+  Server Node:  
+Status:
+  Client Pod:          netperf-client-e1220f798de2
+  Server Pod:          netperf-server-e1220f798de2
+  Speed Bits Per Sec:  12994.34
+  Status:              Done
+Events:                <none>
+```
+- Создана сетевая политика
+```bash
+kubectl apply -f netperf-calico-policy.yaml  
+networkpolicy.crd.projectcalico.org/netperf-calico-policy created
+```
+- Повторно выполняем проверку
+```bash
+kubectl delete -f deploy/cr.yaml 
+kubectl apply -f deploy/cr.yaml 
+
+kubectl describe netperf.app.example.com/example
+Name:         example
+Namespace:    default
+Labels:       <none>
+Annotations:  kubectl.kubernetes.io/last-applied-configuration:
+                {"apiVersion":"app.example.com/v1alpha1","kind":"Netperf","metadata":{"annotations":{},"name":"example","namespace":"default"}}
+API Version:  app.example.com/v1alpha1
+Kind:         Netperf
+Metadata:
+  Creation Timestamp:  2020-08-20T06:01:32Z
+  Generation:          3
+  Resource Version:    5776
+  Self Link:           /apis/app.example.com/v1alpha1/namespaces/default/netperfs/example
+  UID:                 e80a67cd-c366-420f-8d0c-651f8c30d21b
+Spec:
+  Client Node:  
+  Server Node:  
+Status:
+  Client Pod:          netperf-client-651f8c30d21b
+  Server Pod:          netperf-server-651f8c30d21b
+  Speed Bits Per Sec:  0
+  Status:              Started test
+Events:                <none>
+# Тест завис 
+```
+- Проверяем логи на ноде
+```bash
+gcloud beta compute ssh --zone "europe-north1-a" "gke-debug-cluster-default-pool-4d5428fc-3c11" --project "docker-239809"
+
+iptables --list -nv | grep DROP
+   19  1140 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            /* cali:He8TRqGPuUw3VGwk */
+
+iptables --list -nv | grep LOG
+   21  1260 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            /* cali:B30DykF1ntLW86eD */ LOG flags 0 level 5 prefix "calico-packet: "
+
+journalctl -k | grep calico
+
+  Aug 20 06:01:35 gke-debug-cluster-default-pool-4d5428fc-r3zf kernel: calico-packet: IN=calif9e8981d7d6 OUT=caliab5cb6ef933 MAC=ee:ee:ee:ee:ee:ee:5a:b8:39:26:b1:98:08:00 SRC=10.0.1.18 DST=10.0.1.17 LEN=60 TOS=0x00 PREC=0x00 TTL=63 ID=64793 DF PROTO=TCP SPT=43155 DPT=12865 WINDOW=42600 RES=0x00 SYN URGP=0
+  Aug 20 06:01:36 gke-debug-cluster-default-pool-4d5428fc-r3zf kernel: calico-packet: IN=calif9e8981d7d6 OUT=caliab5cb6ef933 MAC=ee:ee:ee:ee:ee:ee:5a:b8:39:26:b1:98:08:00 SRC=10.0.1.18 DST=10.0.1.17 LEN=60 TOS=0x00 PREC=0x00 TTL=63 ID=64794 DF PROTO=TCP SPT=43155 DPT=12865 WINDOW=42600 RES=0x00 SYN URGP=0
+  Aug 20 06:01:38 gke-debug-cluster-default-pool-4d5428fc-r3zf kernel: calico-packet: IN=calif9e8981d7d6 OUT=caliab5cb6ef933 MAC=ee:ee:ee:ee:ee:ee:5a:b8:39:26:b1:98:08:00 SRC=10.0.1.18 DST=10.0.1.17 LEN=60 TOS=0x00 PREC=0x00 TTL=63 ID=64795 DF PROTO=TCP SPT=43155 DPT=12865 WINDOW=42600 RES=0x00 SYN URGP=0
+  Aug 20 06:01:42 gke-debug-cluster-default-pool-4d5428fc-r3zf kernel: calico-packet: IN=calif9e8981d7d6 OUT=caliab5cb6ef933 MAC=ee:ee:ee:ee:ee:ee:5a:b8:39:26:b1:98:08:00 SRC=10.0.1.18 DST=10.0.1.17 LEN=60 TOS=0x00 PREC=0x00 TTL=63 ID=64796 DF PROTO=TCP SPT=43155 DPT=12865 WINDOW=42600 RES=0x00 SYN URGP=0
+...
+```
+- Выполняем запуск iptables-tailer
+```bash
+kubectl apply -f deploy/kit-serviceaccount.yaml
+kubectl apply -f deploy/kit-clusterrole.yaml
+kubectl apply -f deploy/kit-clusterrolebinding.yaml
+kubectl apply -f deploy/iptables-tailer.yaml
+# Проверяем что поды запустились
+k get pods -n kube-system | grep iptables
+kube-iptables-tailer-2gflc                                  1/1     Running   0          2m
+kube-iptables-tailer-fpxw9                                  1/1     Running   0          2m
+
+# Смотрим events
+k get events | grep Packet
+85s         Warning   PacketDrop                pod/netperf-client-7654e4bfbee1                     Packet dropped when sending traffic to 10.0.1.20
+3m36s       Warning   PacketDrop                pod/netperf-server-7654e4bfbee1                     Packet dropped when receiving traffic from 10.0.1.21
+85s         Warning   PacketDrop                pod/netperf-server-7654e4bfbee1                     Packet dropped when receiving traffic 10.0.1.21
+
+# Смотрим events пода
+kubectl describe pod --selector=app=netperf-operator
+Events:
+  Type     Reason      Age                  From                                                   Message
+  ----     ------      ----                 ----                                                   -------
+  Normal   Scheduled   6m6s                 default-scheduler                                      Successfully assigned default/netperf-server-7654e4bfbee1 to gke-debug-cluster-default-pool-4d5428fc-r3zf
+  Normal   Pulled      6m5s                 kubelet, gke-debug-cluster-default-pool-4d5428fc-r3zf  Container image "tailoredcloud/netperf:v2.7" already present on machine
+  Normal   Created     6m5s                 kubelet, gke-debug-cluster-default-pool-4d5428fc-r3zf  Created container netperf-server-7654e4bfbee1
+  Normal   Started     6m5s                 kubelet, gke-debug-cluster-default-pool-4d5428fc-r3zf  Started container netperf-server-7654e4bfbee1
+  Warning  PacketDrop  5m42s                kube-iptables-tailer                                   Packet dropped when receiving traffic from 10.0.1.21
+  Warning  PacketDrop  68s (x2 over 3m31s)  kube-iptables-tailer                                   Packet dropped when receiving traffic from netperf-client-7654e4bfbee1 (10.0.1.21)
+```
+- Для того чтобы политика заработала надо исправить селектор в политике.
+```yaml
+  ingress:
+    - action: Allow
+      source:
+        selector: app == "netperf-operator"
+    - action: Log
+    - action: Deny
+  egress:
+    - action: Allow
+      destination:
+        selector: app == "netperf-operator"
+    - action: Log
+    - action: Deny
+
+```
+- Для отображения имен подов надо закомментировать POD_IDENTIFIER_LABEL в описании DaemonSet iptables-tailer
+```yaml
+#            - name: "POD_IDENTIFIER_LABEL"
+#              value: "netperf-type"
+```
+- Проверка
+```bash
+k describe netperf.app.example.com/example      
+Name:         example
+Namespace:    default
+Labels:       <none>
+Annotations:  kubectl.kubernetes.io/last-applied-configuration:
+                {"apiVersion":"app.example.com/v1alpha1","kind":"Netperf","metadata":{"annotations":{},"name":"example","namespace":"default"}}
+API Version:  app.example.com/v1alpha1
+Kind:         Netperf
+Metadata:
+  Creation Timestamp:  2020-08-20T06:44:58Z
+  Generation:          4
+  Resource Version:    16952
+  Self Link:           /apis/app.example.com/v1alpha1/namespaces/default/netperfs/example
+  UID:                 da104774-5b84-4d02-9d3a-ceb317b39cd6
+Spec:
+  Client Node:  
+  Server Node:  
+Status:
+  Client Pod:          netperf-client-ceb317b39cd6
+  Server Pod:          netperf-server-ceb317b39cd6
+  Speed Bits Per Sec:  12798.15
+  Status:              Done
+Events:                <none>
+
+k get events | grep Packet
+6m6s        Warning   PacketDrop          pod/netperf-client-0677b9ab060b          Packet dropped when sending traffic to netperf-server-0677b9ab060b (10.0.1.22)
+10m         Warning   PacketDrop          pod/netperf-client-7654e4bfbee1          Packet dropped when sending traffic to netperf-server-7654e4bfbee1 (10.0.1.20)
+8m16s       Warning   PacketDrop          pod/netperf-server-0677b9ab060b          Packet dropped when receiving traffic from 10.0.1.23
+6m6s        Warning   PacketDrop          pod/netperf-server-0677b9ab060b          Packet dropped when receiving traffic from netperf-client-0677b9ab060b (10.0.1.23)
+17m         Warning   PacketDrop          pod/netperf-server-7654e4bfbee1          Packet dropped when receiving traffic from 10.0.1.21
+10m         Warning   PacketDrop          pod/netperf-server-7654e4bfbee1          Packet dropped when receiving traffic from netperf-client-7654e4bfbee1 (10.0.1.21)
 ```
 
 # HW.12 Kubernetes-storage
